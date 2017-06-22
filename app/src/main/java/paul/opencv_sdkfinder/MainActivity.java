@@ -23,38 +23,50 @@ import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Point;
+import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 
-import static org.opencv.core.CvType.CV_8U;
-
 public class MainActivity extends AppCompatActivity implements CvCameraViewListener2, SurfaceView.OnTouchListener {
+
+    enum State{
+        seekingSDK,
+        showSDK,
+        stopCamera
+    }
 
     private static final String TAG = "OCVSample::Activity";
 
     private CameraBridgeViewBase mOpenCvCameraView;
     public SurfaceView.OnTouchListener mOpenCvCameraViewOnTouchListener;
 
-    private Mat         m_gui_area;
+
+    private Rect        r_detectArea;
+    private Mat         m_lastOutput;
     private Mat         m_draw;
     private Mat         m_gray;
     private Mat         m_AT_pending;
     private Mat         m_AT_finished;
     private Mat         m_sdk;
 
+    private Mat         m_gui_area;
+    private Mat         m_sub_draw;
+    private Mat         m_sub_AT_finished;
+
     private AT_findSdk  at_findSdk;
     private boolean     at_finished;
 
+    private State       mState;
     private boolean     sdkFound;
-
-    private enum        e_gui{SHOW_RECTANGLE, SHOW_SDK}
-    private boolean[]   b_gui = new boolean[2];
+    private boolean     outputChoice;
 
     // Used to load the 'native-lib' library on application startup.
     static {
         System.loadLibrary("native-lib");
         System.loadLibrary("opencv_java3");
     }
+
+
 
     private int cameraPermission(){
         int hasPermission = ContextCompat.checkSelfPermission(MainActivity.this,
@@ -121,17 +133,22 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Log.d("POLO_D", "START");
         setContentView(R.layout.activity_main);
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         setContentView(R.layout.activity_main);
 
+        mState = State.seekingSDK;
+
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.MainActivity_SurfaceView);
 
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
 
         mOpenCvCameraView.setCvCameraViewListener(this);
+
+//        mOpenCvCameraView.setMaxFrameSize(1000, 1000);
 
         mOpenCvCameraView.setOnTouchListener(mOpenCvCameraViewOnTouchListener);
     }
@@ -166,26 +183,42 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     }
 
     public void onCameraViewStarted(int width, int height) {
-        m_gui_area       = new Mat(height, width, CvType.CV_8UC4);
-        createGuiSdkCpp(m_gui_area.getNativeObjAddr());
+        Log.d("POLO_D", "onCameraViewStarted - A");
+        // Screen sized mat
+        m_lastOutput    = new Mat(height, width, CvType.CV_8UC4);
 
         m_draw          = new Mat(height, width, CvType.CV_8UC4);
 
         m_gray          = new Mat(height, width, CvType.CV_8UC1);
-        m_sdk           = new Mat(height, width, CvType.CV_8UC1);
+        m_sdk           = new Mat(height, width, CvType.CV_8UC4);
 
-        m_AT_finished   = new Mat(height, width, CvType.CV_8UC4);
-        m_AT_pending    = new Mat(height, width, CvType.CV_8UC4);
+
+        // area detection size mat
+        calculateDetectArea(width, height);
+        Log.d("POLO_D", "onCameraViewStarted - 1");
+        m_sub_draw      = new Mat(m_draw, r_detectArea);
+        Log.d("POLO_D", "onCameraViewStarted - 2");
+
+        m_gui_area      = new Mat(r_detectArea.height, r_detectArea.width, CvType.CV_8UC4);
+        Log.d("POLO_D", "onCameraViewStarted - 3");
+        createGuiSdk();
+
+        m_AT_finished   = new Mat(r_detectArea.height, r_detectArea.width, CvType.CV_8UC4);
+        m_AT_pending    = new Mat(r_detectArea.height, r_detectArea.width, CvType.CV_8UC4);
 
         at_findSdk      = new AT_findSdk();
 
-        for ( int i = 0; i < b_gui.length; i++){
-            b_gui[i] = false;
-        }
 
+        sdkFound        = false;
+        outputChoice    = false;
+
+        Log.d("POLO_D", "onCameraViewStarted - B");
     }
 
     public void onCameraViewStopped() {
+        Log.d("POLO_D", "onCameraViewStopped - A");
+        m_lastOutput.release();
+
         m_gui_area.release();
 
         m_draw.release();
@@ -196,62 +229,53 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         m_AT_finished.release();
         m_AT_pending.release();
 
+        Log.d("POLO_D", "onCameraViewStopped - B");
     }
 
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
+        if (sdkFound){
+            return m_lastOutput;
+        }
 
-        findSdk(inputFrame.gray());
+        //findSdk(inputFrame.gray());
 
         inputFrame.rgba().copyTo(m_draw);
 
-//        if(!b_gui[e_gui.SHOW_SDK.ordinal()]) {
-            addWeightedCpp(m_draw.getNativeObjAddr(), m_gui_area.getNativeObjAddr(), 1.0, 0.7);
-//        }
-//
-//        if (at_finished) {
-//            if(b_gui[e_gui.SHOW_RECTANGLE.ordinal()]) {
-                addWeightedCpp(m_draw.getNativeObjAddr(), m_AT_finished.getNativeObjAddr(), 1.0, 1.0);
-//            }
-//            else if(b_gui[e_gui.SHOW_SDK.ordinal()] && sdkFound){
-//                addWeightedCpp(m_draw.getNativeObjAddr(), m_sdk.getNativeObjAddr(), 1.0, 1.0);
-//            }
-//        }
-        Scalar bt;
-        if(b_gui[e_gui.SHOW_RECTANGLE.ordinal()]){
-            bt = new Scalar(255,0,0);
-        }
-        else if(b_gui[e_gui.SHOW_SDK.ordinal()]){
-            bt = new Scalar(0,255,0);
-        }
-        else{
-            bt = new Scalar(0,0,255);
-        }
+        addWeightedCpp(m_sub_draw.getNativeObjAddr(), m_gui_area.getNativeObjAddr(), 1.0, 0.7);
 
-        Imgproc.rectangle(m_draw, new Point(10,10), new Point(20,20), bt,-1);
+        //addWeightedCpp(m_sub_draw.getNativeObjAddr(), m_AT_finished.getNativeObjAddr(), 1.0, 1.0);
+
+        m_draw.copyTo(m_lastOutput);
         return m_draw;
     }
 
     private void findSdk(Mat gray){
-        if(at_findSdk.getStatus() == AsyncTask.Status.PENDING){
-            gray.copyTo(m_gray);
-            at_findSdk.execute(m_gray, m_AT_pending);
-        }
-        else if (at_findSdk.getStatus() == AsyncTask.Status.FINISHED) {
-            m_gray.copyTo(m_sdk);
-            m_AT_pending.copyTo(m_AT_finished);
-            Mat.zeros(m_AT_pending.rows(),m_AT_pending.cols(), m_AT_pending.type()).copyTo(m_AT_pending);
-            at_finished = true;
-            sdkFound = at_findSdk.getSdkFound();
-            at_findSdk = new AT_findSdk();
+        if(sdkFound == false) {
+            if (at_findSdk.getStatus() == AsyncTask.Status.PENDING) {
+                gray.copyTo(m_gray);
+                at_findSdk.setResultChoice(outputChoice);
+                at_findSdk.execute(m_gray, m_AT_pending, m_sdk);
+            } else if (at_findSdk.getStatus() == AsyncTask.Status.FINISHED) {
+                m_AT_pending.copyTo(m_AT_finished);
+                Mat.zeros(m_AT_pending.rows(), m_AT_pending.cols(), m_AT_pending.type()).copyTo(m_AT_pending);
+                at_finished = true;
+                sdkFound = at_findSdk.getSdkFound();
+                at_findSdk = new AT_findSdk();
+            }
         }
     }
 
     private class AT_findSdk extends AsyncTask<Mat, Void, Void> {
         private boolean at_sdkFound;
+        private boolean at_resultChoice;
 
         protected Void doInBackground(Mat... params){
-            at_sdkFound = findSdkCpp(params[0].getNativeObjAddr(), params[1].getNativeObjAddr());
+            at_sdkFound = findSdkCpp(params[0].getNativeObjAddr(), params[1].getNativeObjAddr(), at_resultChoice);
             return null;
+        }
+
+        protected void setResultChoice(boolean choice){
+            at_resultChoice = choice;
         }
 
         protected boolean getSdkFound() {
@@ -260,34 +284,85 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     }
 
     @Override
-    public boolean onTouch( View v, MotionEvent event) {
-
-        switch(event.getAction()) {
-            case MotionEvent.ACTION_DOWN:
-                if (!b_gui[e_gui.SHOW_RECTANGLE.ordinal()] && !b_gui[e_gui.SHOW_SDK.ordinal()]) {
-                    b_gui[e_gui.SHOW_RECTANGLE.ordinal()] = false;
-                    b_gui[e_gui.SHOW_SDK.ordinal()] = true;
-                } else if (b_gui[e_gui.SHOW_RECTANGLE.ordinal()] && !b_gui[e_gui.SHOW_SDK.ordinal()]) {
-                    b_gui[e_gui.SHOW_RECTANGLE.ordinal()] = false;
-                    b_gui[e_gui.SHOW_SDK.ordinal()] = false;
-                } else {
-                    b_gui[e_gui.SHOW_RECTANGLE.ordinal()] = true;
-                    b_gui[e_gui.SHOW_SDK.ordinal()] = false;
-                }
-
-                Log.d("POLO:onTouch", "ON TOUCHE !!!");
-                break;
-            default:
-                Log.d("POLO:onTouch", "ON TOUCHE QUEDAL!!!");
-                break;
-        }
+    public boolean onTouch( View v, MotionEvent event ) {
+        Log.d("POLO_D", "onTouch - A");
+        mOpenCvCameraView.enableView();
+        Log.d("POLO_D", "onTouch - B");
 
         return true;
     }
 
-    public native void createGuiSdkCpp(long matAddr);
+    public boolean onClick(View v){
+        Log.d("POLO_D", "onClick - A");
 
-    public native boolean findSdkCpp(long grayAddr, long outAddr);
+        mOpenCvCameraView.enableView();
+
+        mState = State.seekingSDK;
+        sdkFound = false;
+
+//        if(mState == State.cameraOff) {
+//            mOpenCvCameraView.enableView();
+//            mState = State.cameraOn;
+//        }
+//        else {
+//            mOpenCvCameraView.disableView();
+//            mState = State.cameraOff;
+//        }
+        Log.d("POLO_D", "onClick - B");
+        return true;
+    }
+
+    void calculateDetectArea(int width, int height){
+        Log.d("POLO_D", "calculateDetectArea - A");
+
+        // screen must be landscape oriented !
+        final double  inner_square_ratio = 0.1;
+        final int     inner_square_or    =(int)Math.floor((double)(height)* inner_square_ratio);
+
+        final int x     = ((width - height) / 2) + inner_square_or;
+        final int y     = inner_square_or;
+        final int size  = height - (inner_square_or * 2);
+
+        r_detectArea = new Rect(x, y, size, size);
+
+        Log.d("POLO_D", "calculateDetectArea - B");
+    }
+
+    void createGuiSdk(){
+        // GUI : forme carrée, telle un viseur, servant à définir la zone de detection des sudoku
+
+        // Blank_square : centre vide du rectangle de la GUI
+        //                sert à effacer le centre du carré de la GUI
+        final double    blank_square_ratio  = 0.1;  // permet de definir la taille du carré qui servira à effacer le centre de la GUI.
+                                                    // Plus le nombre est faible, plus les bordures de la GUI sont fines
+        final int       blank_square_or     = (int)Math.floor(m_gui_area.size().width * blank_square_ratio);    // Point d'origine du carré
+        final int       blank_square_size   = (int)m_gui_area.size().width - (blank_square_or * 2);             // Taille du carré (longueur d'un côté)
+
+        // Blank_rect   : rectangles vide de la GUI
+        //                sert à effacer le centre des bords de la GUI
+        final double    blank_rect_ratio    = 0.33; // permet de définir la largeur du creux entre les sommets de la GUI.
+                                                    // Plus le nombre est faible, plus le creux est étroit.
+        final int       blank_rect_or       = (int)Math.floor(m_gui_area.size().width * blank_rect_ratio);      // Point d'origine du rectangle
+        final int       blank_rect_size     = (int)m_gui_area.size().width - (blank_rect_or * 2);               // Taille du côté le plus court du rectangle (l'autre étant égal à la taille de GUI
+
+        final Rect blank_square     = new Rect(blank_square_or, blank_square_or, blank_square_size, blank_square_size);
+        final Rect blank_rect_ver   = new Rect(blank_rect_or, 0, blank_rect_size, (int)m_gui_area.size().height);
+        final Rect blank_rect_hor   = new Rect(0, blank_rect_or, (int)m_gui_area.size().width, blank_rect_size);
+
+        final Scalar color = new Scalar(0,255,100);
+        m_gui_area.setTo(color);
+
+        Mat dump = new Mat(m_gui_area,blank_square);
+        Mat.zeros(dump.size(), dump.type()).copyTo(dump);
+        dump = new Mat(m_gui_area,blank_rect_ver);
+        Mat.zeros(dump.size(), dump.type()).copyTo(dump);
+        dump = new Mat(m_gui_area,blank_rect_hor);
+        Mat.zeros(dump.size(), dump.type()).copyTo(dump);
+        dump.release();
+    }
+
+
+    public native boolean findSdkCpp(long grayAddr, long outAddr, boolean outParam);
 
     public native void addWeightedCpp(long m1Addr, long m2Addr, double alpha, double beta);
 }
