@@ -27,7 +27,7 @@ import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 
-public class MainActivity extends AppCompatActivity implements CvCameraViewListener2, SurfaceView.OnTouchListener {
+public class MainActivity extends AppCompatActivity implements CvCameraViewListener2 {
 
     enum State{
         seekingSDK,
@@ -45,18 +45,17 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     private Mat         m_lastOutput;
     private Mat         m_draw;
     private Mat         m_gray;
-    private Mat         m_AT_pending;
-    private Mat         m_AT_finished;
     private Mat         m_sdk;
 
     private Mat         m_gui_area;
     private Mat         m_sub_draw;
-    private Mat         m_sub_AT_finished;
+    private Mat         m_sub_gray;
+    private Mat         m_AT_pending;
+    private Mat         m_AT_finished;
 
     private AT_findSdk  at_findSdk;
     private boolean     at_finished;
 
-    private State       mState;
     private boolean     sdkFound;
     private boolean     outputChoice;
 
@@ -140,8 +139,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
         setContentView(R.layout.activity_main);
 
-        mState = State.seekingSDK;
-
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.MainActivity_SurfaceView);
 
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
@@ -190,13 +187,13 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         m_draw          = new Mat(height, width, CvType.CV_8UC4);
 
         m_gray          = new Mat(height, width, CvType.CV_8UC1);
-        m_sdk           = new Mat(height, width, CvType.CV_8UC4);
 
 
         // area detection size mat
         calculateDetectArea(width, height);
         Log.d("POLO_D", "onCameraViewStarted - 1");
         m_sub_draw      = new Mat(m_draw, r_detectArea);
+        m_sub_gray      = new Mat(m_gray, r_detectArea);
         Log.d("POLO_D", "onCameraViewStarted - 2");
 
         m_gui_area      = new Mat(r_detectArea.height, r_detectArea.width, CvType.CV_8UC4);
@@ -205,6 +202,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
         m_AT_finished   = new Mat(r_detectArea.height, r_detectArea.width, CvType.CV_8UC4);
         m_AT_pending    = new Mat(r_detectArea.height, r_detectArea.width, CvType.CV_8UC4);
+        m_sdk           = new Mat(r_detectArea.height, r_detectArea.width, CvType.CV_8UC4);
 
         at_findSdk      = new AT_findSdk();
 
@@ -237,13 +235,13 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             return m_lastOutput;
         }
 
-        //findSdk(inputFrame.gray());
+        findSdk(inputFrame.gray());
 
         inputFrame.rgba().copyTo(m_draw);
 
         addWeightedCpp(m_sub_draw.getNativeObjAddr(), m_gui_area.getNativeObjAddr(), 1.0, 0.7);
 
-        //addWeightedCpp(m_sub_draw.getNativeObjAddr(), m_AT_finished.getNativeObjAddr(), 1.0, 1.0);
+        addWeightedCpp(m_sub_draw.getNativeObjAddr(), m_AT_finished.getNativeObjAddr(), 1.0, 1.0);
 
         m_draw.copyTo(m_lastOutput);
         return m_draw;
@@ -254,7 +252,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             if (at_findSdk.getStatus() == AsyncTask.Status.PENDING) {
                 gray.copyTo(m_gray);
                 at_findSdk.setResultChoice(outputChoice);
-                at_findSdk.execute(m_gray, m_AT_pending, m_sdk);
+                at_findSdk.execute(m_sub_gray, m_AT_pending, m_sdk);
             } else if (at_findSdk.getStatus() == AsyncTask.Status.FINISHED) {
                 m_AT_pending.copyTo(m_AT_finished);
                 Mat.zeros(m_AT_pending.rows(), m_AT_pending.cols(), m_AT_pending.type()).copyTo(m_AT_pending);
@@ -283,31 +281,13 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         }
     }
 
-    @Override
-    public boolean onTouch( View v, MotionEvent event ) {
-        Log.d("POLO_D", "onTouch - A");
-        mOpenCvCameraView.enableView();
-        Log.d("POLO_D", "onTouch - B");
-
-        return true;
-    }
-
     public boolean onClick(View v){
         Log.d("POLO_D", "onClick - A");
 
         mOpenCvCameraView.enableView();
 
-        mState = State.seekingSDK;
         sdkFound = false;
 
-//        if(mState == State.cameraOff) {
-//            mOpenCvCameraView.enableView();
-//            mState = State.cameraOn;
-//        }
-//        else {
-//            mOpenCvCameraView.disableView();
-//            mState = State.cameraOff;
-//        }
         Log.d("POLO_D", "onClick - B");
         return true;
     }
@@ -349,9 +329,13 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         final Rect blank_rect_ver   = new Rect(blank_rect_or, 0, blank_rect_size, (int)m_gui_area.size().height);
         final Rect blank_rect_hor   = new Rect(0, blank_rect_or, (int)m_gui_area.size().width, blank_rect_size);
 
+
+        // draw GUI
+        // Start with a big square
         final Scalar color = new Scalar(0,255,100);
         m_gui_area.setTo(color);
 
+        // Erase unwanted area to create visor pattern
         Mat dump = new Mat(m_gui_area,blank_square);
         Mat.zeros(dump.size(), dump.type()).copyTo(dump);
         dump = new Mat(m_gui_area,blank_rect_ver);
