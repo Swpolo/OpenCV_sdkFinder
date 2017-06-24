@@ -248,7 +248,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     }
 
     private void findSdk(Mat gray){
-        if(sdkFound == false) {
+        if( !sdkFound ) {
             if (at_findSdk.getStatus() == AsyncTask.Status.PENDING) {
                 gray.copyTo(m_gray);
                 at_findSdk.setResultChoice(outputChoice);
@@ -272,11 +272,11 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             return null;
         }
 
-        protected void setResultChoice(boolean choice){
+        private void setResultChoice(boolean choice){
             at_resultChoice = choice;
         }
 
-        protected boolean getSdkFound() {
+        private boolean getSdkFound() {
             return at_sdkFound;
         }
     }
@@ -286,7 +286,12 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
         mOpenCvCameraView.enableView();
 
-        sdkFound = false;
+        if(sdkFound) {
+            sdkFound = false;
+        }
+        else {
+            outputChoice = !outputChoice;
+        }
 
         Log.d("POLO_D", "onClick - B");
         return true;
@@ -313,7 +318,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
         // Blank_square : centre vide du rectangle de la GUI
         //                sert à effacer le centre du carré de la GUI
-        final double    blank_square_ratio  = 0.1;  // permet de definir la taille du carré qui servira à effacer le centre de la GUI.
+        final double    blank_square_ratio  = 0.05;  // permet de definir la taille du carré qui servira à effacer le centre de la GUI.
                                                     // Plus le nombre est faible, plus les bordures de la GUI sont fines
         final int       blank_square_or     = (int)Math.floor(m_gui_area.size().width * blank_square_ratio);    // Point d'origine du carré
         final int       blank_square_size   = (int)m_gui_area.size().width - (blank_square_or * 2);             // Taille du carré (longueur d'un côté)

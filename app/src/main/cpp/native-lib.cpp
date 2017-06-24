@@ -23,10 +23,10 @@ extern "C" {
 
         Mat &pOutput = *(cv::Mat *) addrRgba;
 
-        const uint16_t width = pOutput.rows;   // X
-        const uint16_t height = pOutput.cols;  // Y
-        const uint16_t min = (width > height ? height : width);
-        const uint16_t max = (width < height ? height : width);
+        const int width = pOutput.rows;   // X
+        const int height = pOutput.cols;  // Y
+        const int min = (width > height ? height : width);
+        const int max = (width < height ? height : width);
 
         Rect roi((max - min) >> 1, 0, min, min);
         Mat subMat(pOutput, roi);
@@ -47,32 +47,24 @@ extern "C" {
         Mat &m_base = *(Mat *) addrMatGray;
         Mat &m_out = *(Mat *) addrMatOut;
 
-        int width = m_base.rows;   // X
-        int height = m_base.cols;  // Y
-        int min = (width > height ? height : width);
-        int max = (width < height ? height : width);
-        Rect roi((max - min) >> 1, 0, min, min);
-
-        Mat m_sub_base(m_base, roi);
-        Mat m_sub_out(m_out, roi);
-
-        const vector<Point> subMat{Point(0, 0), Point(0, min), Point(min, min), Point(min, 0)};
+        const vector<Point> p_base{Point(0,0), Point(m_base.size().width, 0), Point(m_base.size().width, m_base.size().height), Point(0, m_base.size().height)};
         const double coeff_grid     = 0.5 * 0.5;
-        const double coeff_block    = coeff_grid * coeff_grid * 0.3 * 0.3 ;
-        const double subMatSize     = contourArea(subMat);
+        const double coeff_block    = coeff_grid * coeff_grid * 0.3 * 0.3;
+        const double subMatSize     = contourArea(p_base);
         const double gridSizeMin    = subMatSize * coeff_grid;
         const double blockSizeMin   = subMatSize * coeff_block;
 
-        GaussianBlur(m_sub_base, m_sub_base, Size(9, 9), 0);
-        adaptiveThreshold(m_sub_base, m_sub_base, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 11,
-                          5);
-        bitwise_not(m_sub_base, m_sub_base);
+        GaussianBlur(m_base, m_base, Size(9, 9), 0);
+        adaptiveThreshold(m_base, m_base, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY, 9, 3);
+        bitwise_not(m_base, m_base);
 
-        const int blurSize = 6;
-        Mat dilateElement = getStructuringElement(MORPH_RECT, Size((2 * blurSize)+ 1, (2 * blurSize)+ 1), Point(blurSize, blurSize));
-        Mat erodeElement = getStructuringElement(MORPH_RECT, Size((2 * blurSize)+ 1, (2 * blurSize)+ 1), Point(blurSize, blurSize));
-        dilate(m_sub_base, m_sub_base, dilateElement);
-        erode(m_sub_base, m_sub_base, erodeElement);
+
+//        const int blurSize = 6;
+//        Mat dilateElement = getStructuringElement(MORPH_RECT, Size((2 * blurSize)+ 1, (2 * blurSize)+ 1), Point(blurSize, blurSize));
+//        Mat erodeElement = getStructuringElement(MORPH_RECT, Size((2 * blurSize)+ 1, (2 * blurSize)+ 1), Point(blurSize, blurSize));
+//        erode(m_base, m_base, erodeElement);
+//        dilate(m_base, m_base, dilateElement);
+
 
         vector<vector<Point>> contours;
         vector<vector<Point>> grid;
@@ -83,7 +75,7 @@ extern "C" {
         vector<Point> biggestRectangle;
         double biggestRectangleSize = 0.0;
 
-        findContours(m_sub_base, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);
+        findContours(m_base, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);
 
         // find all rectangle
         for (unsigned int i = 0; i < contours.size(); i++) {
@@ -115,17 +107,17 @@ extern "C" {
 
         if(grid.size() != 0) { sdkFound = true; }
 
-        if( sdkFound == true ){
+        if( sdkFound ){
             Point2f src[4];
             Point2f src_o[4];
-            for(int i = 0; i < 4; i++) {
+            for(unsigned int i = 0; i < 4; i++) {
                 src[i] = Point2f(biggestRectangle.at(i).x, biggestRectangle.at(i).y);
             }
             Point2f dst[4];
-            dst[0] = Point2f(roi.x, roi.y);
-            dst[1] = Point2f(roi.x + roi.height, roi.y);
-            dst[2] = Point2f(roi.x + roi.height, roi.y + roi.width);
-            dst[3] = Point2f(roi.x, roi.y + roi.width);
+            dst[0] = Point2f(0, 0);
+            dst[1] = Point2f(m_base.size().width, 0);
+            dst[2] = Point2f(m_base.size().width, m_base.size().height);
+            dst[3] = Point2f(0, m_base.size().height);
 
             orderPoints(src, src_o);
 
@@ -134,23 +126,26 @@ extern "C" {
             }
 
             Mat M = getPerspectiveTransform(src_o, dst);
+            Mat m_out_p = Mat(m_out.size(), m_out.type());
 
-            warpPerspective(m_sub_out, m_sub_out, M, m_sub_out.size());
+            warpPerspective(m_out, m_out_p, M, m_out.size());
 
-            circle(m_sub_out, Point(50,50), 25, Scalar(255,0,0), -1);
+            m_out_p.copyTo(m_out);
+
+            circle(m_out, Point(50,50), 25, Scalar(255,0,0), -1);
 
             return (jboolean) sdkFound;
         }
 
-        if(outParam == true) {
+        if( outParam ) {
             for (unsigned int i = 0; i < grid.size(); i++) {
-                showSdkContour(m_sub_out, grid.at(i), Scalar(0, 255, 0), 5);
+                showSdkContour(m_out, grid.at(i), Scalar(0, 255, 0), 5);
             }
             for (unsigned int i = 0; i < block.size(); i++) {
-                showSdkContour(m_sub_out, block.at(i), Scalar(255, 255, 0), 5);
+                showSdkContour(m_out, block.at(i), Scalar(255, 255, 0), 5);
             }
             for (unsigned int i = 0; i < defect.size(); i++) {
-                showSdkContour(m_sub_out, defect.at(i), Scalar(255, 0, 0), 5);
+                showSdkContour(m_out, defect.at(i), Scalar(255, 0, 0), 5);
             }
 //            __android_log_print(ANDROID_LOG_DEBUG,"POLO_D", "We printed the result");
         }
@@ -207,22 +202,39 @@ extern "C" {
     }
 
     void showSdkContour(Mat canvas, vector<Point> rectangle, Scalar color, int thickness) {
-        for (int i = 0; i < 4; i++) {
+        for (unsigned int i = 0; i < 4; i++) {
             line(canvas, rectangle.at(i), rectangle.at(mod0(i + 1, 4)), color, thickness);
         }
     }
 
+JNIEXPORT void JNICALL
+Java_paul_opencv_1sdkfinder_ExampleUnitTest_orderPointCpp(
+        JNIEnv *env,
+        jobject /* this */,
+        vector<Point2f>& jsrc,
+        vector<Point2f>& jdst) {
+
+    Point2f src[4];
+    Point2f dst[4];
+    for(unsigned int i = 0; i < 4 ; i++){
+        src[i] = jsrc.at(i);
+        dst[i] = jdst.at(i);
+    }
+    orderPoints(src, dst);
+}
+
     void orderPoints(Point2f src[], Point2f dst[]){
-        float dump_a = 0.0f;
+        float dump_a;
+        float sum;
         int points[4];
 
         //find point 1 (origin : smallest sum)
         dump_a = src[0].x + src[0].y;
         points[0] = 0;
-        for(int i = 1; i < 4; i++){
-            float sum = src[i].x + src[i].y;
+        for(unsigned int i = 1; i < 4; i++){
+            sum = src[i].x + src[i].y;
             if(sum < dump_a){
-                sum = dump_a;
+                dump_a = sum;
                 points[0] = i;
             }
         }
@@ -230,10 +242,10 @@ extern "C" {
         // find point 3 (biggest sum)
         dump_a = src[0].x + src[0].y;
         points[2] = 0;
-        for(int i = 1; i < 4; i++){
-            float sum = src[i].x + src[i].y;
+        for(unsigned int i = 1; i < 4; i++){
+            sum = src[i].x + src[i].y;
             if(sum > dump_a){
-                sum = dump_a;
+                dump_a = sum;
                 points[2] = i;
             }
         }
@@ -241,7 +253,7 @@ extern "C" {
         // find point 2 (biggest x not selected)
         dump_a = 0.0f;
         points[1] = 0;
-        for(int i = 0; i < 4 ; i++){
+        for(unsigned int i = 0; i < 4 ; i++){
             if(i == points[0] || i == points[2]){
                 continue;
             }
@@ -252,14 +264,14 @@ extern "C" {
         }
 
         // find point 4 (last point)
-        for(int i = 0; i < 4; i++){
+        for(unsigned int i = 0; i < 4; i++){
             if(i == points[0] || i == points[1] || i == points[2]) {
                 continue;
             }
             points[3] = i;
         }
 
-        for(int i = 0; i < 4; i++){
+        for(unsigned int i = 0; i < 4; i++){
             dst[i].x = src[points[i]].x;
             dst[i].y = src[points[i]].y;
         }
