@@ -2,7 +2,10 @@ package paul.opencv_sdkfinder;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.os.AsyncTask;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -20,12 +23,20 @@ import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
+import org.opencv.android.Utils;
+import org.opencv.core.CvException;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 
 public class MainActivity extends AppCompatActivity implements CvCameraViewListener2 {
 
@@ -240,6 +251,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         }
         else {
             m_AT_finished.copyTo(m_sub_draw);
+
+            saveResult(m_AT_finished);
         }
         m_draw.copyTo(m_lastOutput);
         return m_draw;
@@ -341,6 +354,42 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         dump = new Mat(m_gui_area,blank_rect_hor);
         Mat.zeros(dump.size(), dump.type()).copyTo(dump);
         dump.release();
+    }
+
+    private void saveResult(Mat result){
+
+
+
+        Bitmap bmp = null;
+        try {
+            bmp = Bitmap.createBitmap(m_AT_finished.cols(), m_AT_finished.rows(), Bitmap.Config.ARGB_8888);
+            Utils.matToBitmap(m_AT_finished, bmp);
+        }
+        catch (CvException e){Log.d("Exception",e.getMessage());}
+
+        writeExternalStoragePermission();
+        String root = Environment.getExternalStorageDirectory().toString();
+        File myDir = new File(root + "/sudokuSolver");
+        myDir.mkdirs();
+        String fname = "sdk.jpg";
+        File file = new File(myDir, fname);
+        if (!file.exists()) {
+            file.mkdirs();
+        }
+
+        if (file.exists())
+            file.delete();
+
+        try {
+            FileOutputStream out = new FileOutputStream(file);
+            bmp.compress(Bitmap.CompressFormat.JPEG, 90, out);
+            out.flush();
+            out.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+
     }
 
 

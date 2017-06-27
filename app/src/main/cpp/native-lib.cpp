@@ -126,12 +126,8 @@ extern "C" {
 
             orderPoints(src, src_o);
 
-            for(int i = 0; i < 4; i++){
-                __android_log_print(ANDROID_LOG_DEBUG,"POLO_D", "src_o(%f,%f) : dst(%f,%f)", src_o[i].x, src_o[i].y, dst[i].x, dst[i].y);
-            }
-
             Mat M = getPerspectiveTransform(src_o, dst);
-            Mat m_out_p = Mat(m_out.size(), m_out.type());
+            //Mat m_out_p = Mat(m_out.size(), m_out.type());
 
             warpPerspective(m_rgba, m_out, M, m_out.size());
 
