@@ -3,6 +3,7 @@
 #include <string>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/calib3d.hpp>
 #include <android/log.h>
 
 #define mod0(X,Y) (X != Y ? X : 0)
@@ -46,6 +47,10 @@ extern "C" {
 
         Mat &m_base = *(Mat *) addrMatGray;
         Mat &m_out = *(Mat *) addrMatOut;
+        Mat m_rgba(m_out.size(), m_out.type());
+
+        m_out.copyTo(m_rgba);
+        m_out = Mat::zeros(m_out.size(), m_out.type());
 
         const vector<Point> p_base{Point(0,0), Point(m_base.size().width, 0), Point(m_base.size().width, m_base.size().height), Point(0, m_base.size().height)};
         const double coeff_grid     = 0.5 * 0.5;
@@ -128,11 +133,7 @@ extern "C" {
             Mat M = getPerspectiveTransform(src_o, dst);
             Mat m_out_p = Mat(m_out.size(), m_out.type());
 
-            warpPerspective(m_out, m_out_p, M, m_out.size());
-
-            m_out_p.copyTo(m_out);
-
-            circle(m_out, Point(50,50), 25, Scalar(255,0,0), -1);
+            warpPerspective(m_rgba, m_out, M, m_out.size());
 
             return (jboolean) sdkFound;
         }

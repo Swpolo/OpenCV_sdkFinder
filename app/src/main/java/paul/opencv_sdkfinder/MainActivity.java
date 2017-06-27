@@ -180,7 +180,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     }
 
     public void onCameraViewStarted(int width, int height) {
-        Log.d("POLO_D", "onCameraViewStarted - A");
         // Screen sized mat
         m_lastOutput    = new Mat(height, width, CvType.CV_8UC4);
 
@@ -191,13 +190,10 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
         // area detection size mat
         calculateDetectArea(width, height);
-        Log.d("POLO_D", "onCameraViewStarted - 1");
         m_sub_draw      = new Mat(m_draw, r_detectArea);
         m_sub_gray      = new Mat(m_gray, r_detectArea);
-        Log.d("POLO_D", "onCameraViewStarted - 2");
 
         m_gui_area      = new Mat(r_detectArea.height, r_detectArea.width, CvType.CV_8UC4);
-        Log.d("POLO_D", "onCameraViewStarted - 3");
         createGuiSdk();
 
         m_AT_finished   = new Mat(r_detectArea.height, r_detectArea.width, CvType.CV_8UC4);
@@ -210,11 +206,9 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         sdkFound        = false;
         outputChoice    = false;
 
-        Log.d("POLO_D", "onCameraViewStarted - B");
     }
 
     public void onCameraViewStopped() {
-        Log.d("POLO_D", "onCameraViewStopped - A");
         m_lastOutput.release();
 
         m_gui_area.release();
@@ -227,7 +221,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         m_AT_finished.release();
         m_AT_pending.release();
 
-        Log.d("POLO_D", "onCameraViewStopped - B");
     }
 
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
@@ -235,22 +228,28 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             return m_lastOutput;
         }
 
-        findSdk(inputFrame.gray());
-
         inputFrame.rgba().copyTo(m_draw);
 
-        addWeightedCpp(m_sub_draw.getNativeObjAddr(), m_gui_area.getNativeObjAddr(), 1.0, 0.7);
+        findSdk(inputFrame.gray(), m_sub_draw);
 
-        addWeightedCpp(m_sub_draw.getNativeObjAddr(), m_AT_finished.getNativeObjAddr(), 1.0, 1.0);
+        if(!sdkFound) {
+            addWeightedCpp(m_sub_draw.getNativeObjAddr(), m_gui_area.getNativeObjAddr(), 1.0, 0.7);
 
+            addWeightedCpp(m_sub_draw.getNativeObjAddr(), m_AT_finished.getNativeObjAddr(), 1.0, 1.0);
+
+        }
+        else {
+            m_AT_finished.copyTo(m_sub_draw);
+        }
         m_draw.copyTo(m_lastOutput);
         return m_draw;
     }
 
-    private void findSdk(Mat gray){
+    private void findSdk(Mat gray, Mat rgba){
         if( !sdkFound ) {
             if (at_findSdk.getStatus() == AsyncTask.Status.PENDING) {
                 gray.copyTo(m_gray);
+                rgba.copyTo(m_AT_pending);
                 at_findSdk.setResultChoice(outputChoice);
                 at_findSdk.execute(m_sub_gray, m_AT_pending, m_sdk);
             } else if (at_findSdk.getStatus() == AsyncTask.Status.FINISHED) {
@@ -282,8 +281,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     }
 
     public boolean onClick(View v){
-        Log.d("POLO_D", "onClick - A");
-
         mOpenCvCameraView.enableView();
 
         if(sdkFound) {
@@ -293,13 +290,10 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             outputChoice = !outputChoice;
         }
 
-        Log.d("POLO_D", "onClick - B");
         return true;
     }
 
     void calculateDetectArea(int width, int height){
-        Log.d("POLO_D", "calculateDetectArea - A");
-
         // screen must be landscape oriented !
         final double  inner_square_ratio = 0.1;
         final int     inner_square_or    =(int)Math.floor((double)(height)* inner_square_ratio);
@@ -310,7 +304,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
         r_detectArea = new Rect(x, y, size, size);
 
-        Log.d("POLO_D", "calculateDetectArea - B");
     }
 
     void createGuiSdk(){
