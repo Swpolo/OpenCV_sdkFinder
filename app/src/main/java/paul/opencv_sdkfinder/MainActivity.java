@@ -3,6 +3,8 @@ package paul.opencv_sdkfinder;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Matrix;
+import android.media.MediaScannerConnection;
 import android.os.AsyncTask;
 import android.os.Environment;
 import android.provider.MediaStore;
@@ -38,13 +40,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 
-public class MainActivity extends AppCompatActivity implements CvCameraViewListener2 {
+import static android.R.attr.path;
 
-    enum State{
-        seekingSDK,
-        showSDK,
-        stopCamera
-    }
+public class MainActivity extends AppCompatActivity implements CvCameraViewListener2 {
 
     private static final String TAG = "OCVSample::Activity";
 
@@ -358,12 +356,12 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
     private void saveResult(Mat result){
 
-
-
         Bitmap bmp = null;
         try {
-            bmp = Bitmap.createBitmap(m_AT_finished.cols(), m_AT_finished.rows(), Bitmap.Config.ARGB_8888);
-            Utils.matToBitmap(m_AT_finished, bmp);
+            bmp = Bitmap.createBitmap(result.cols(), result.rows(), Bitmap.Config.ARGB_8888);
+            Utils.matToBitmap(result, bmp);
+
+            bmp = RotateBitmap(bmp, 90);
         }
         catch (CvException e){Log.d("Exception",e.getMessage());}
 
@@ -385,11 +383,20 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             bmp.compress(Bitmap.CompressFormat.JPEG, 90, out);
             out.flush();
             out.close();
+
+            MediaScannerConnection.scanFile(this, new String[] {file.toString()}, null, null);
         } catch (Exception e) {
             e.printStackTrace();
         }
 
 
+    }
+
+    public static Bitmap RotateBitmap(Bitmap source, float angle)
+    {
+        Matrix matrix = new Matrix();
+        matrix.postRotate(angle);
+        return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true);
     }
 
 
